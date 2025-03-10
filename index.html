@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>天気情報アプリ</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    
+    <style>
+        /* ページ全体のスタイル */
+        body {
+            background-color: #f5f5f5;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* 天気情報のコンテナ */
+        .weather-container {
+            max-width: 400px;
+            margin: 20px auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+
+        /* ボタンのデザイン */
+        .custom-btn {
+            font-size: 1.2rem;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
+            transition: 0.3s;
+        }
+
+        .custom-btn:hover {
+            background-color: #0056b3;
+            transform: scale(1.05);
+        }
+
+        /* 天気アイコンのスタイル */
+        .weather-icon {
+            width: 100px;
+            height: auto;
+            display: block;
+            margin: 10px auto;
+        }
+    </style>
+</head>
+<body>
+    <!-- 現在地の天気取得ボタン -->
+    <button class="btn btn-success custom-btn w-100 mt-2" onclick="fetchWeatherByLocation()">📍 現在地の天気</button>
+
+    <h1 class="md-3">🌤 天気情報アプリ</h1>
+
+    <!-- 天気情報の入力・表示エリア -->
+    <div class="weather-container">
+        <input type="text" id="city" class="form-control mb-2" placeholder="都市名を入力">
+        <button class="btn btn-primary custom-btn w-100" onclick="fetchWeather()">取得</button>
+        <div id="weatherResult" class="mt-3"></div>
+        <div id="history" class="mt-3"></div>  <!-- 履歴表示用 -->
+    </div>
+
+    <script>
+        // 「Enter」キーで検索を実行できるようにする
+        document.getElementById("city").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") {
+                fetchWeather();
+            }
+        });
+
+        // 検索履歴を保存する関数（ローカルストレージを利用）
+        function saveHistory(city) {
+            let history = JSON.parse(localStorage.getItem("weatherHistory")) || [];
+
+            // 同じ都市名を重複して保存しないようにする
+            history = history.filter(item => item !== city);
+            history.unshift(city); // 先頭に追加
+
+            // 履歴を最大5件までに制限
+            if (history.length > 5) {
+                history.pop();
+            }
+
+            localStorage.setItem("weatherHistory", JSON.stringify(history));
+            displayHistory();
+        }
+
+        // 履歴を表示する関数
+        function displayHistory() {
+            const historyDiv = document.getElementById("history");
+            historyDiv.innerHTML = ""; 
+
+            let history = JSON.parse(localStorage.getItem("weatherHistory")) || [];
+
+            history.forEach(city => {
+                const button = document.createElement("button");
+                button.textContent = city;
+                button.classList.add("btn", "btn-outline-secondary", "m-1");
+                button.onclick = () => {
+                    document.getElementById("city").value = city;
+                    fetchWeather();
+                };
+                historyDiv.appendChild(button);
+            });
+        }
+
+        // 現在地の天気を取得する関数
+        async function fetchWeatherByLocation() {
+            if (!navigator.geolocation) {
+                alert("GPSがサポートされていません");
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+
+                try {
+                    const response = await fetch(`http://127.0.0.1:5000/weather?lat=${lat}&lon=${lon}`);
+                    const data = await response.json();
+
+                    if (data.error) {
+                        document.getElementById("weatherResult").innerHTML = `<p style="color: red;">⚠ ${data.error}</p>`;
+                        return;
+                    }
+
+                    document.getElementById("weatherResult").innerHTML = `
+                        <h3>現在地の天気</h3>
+                        <img src="${getWeatherIcon(data["天気"])}" alt="天気アイコン">
+                        <p><strong>天気:</strong> ${data["天気"]}</p>
+                        <p><strong>気温:</strong> ${data["気温 (°C)"]}°C</p>
+                        <p><strong>湿度:</strong> ${data["湿度 (%)"]}%</p>
+                        <p><strong>風速:</strong> ${data["風速 (m/s)"]}m/s</p>
+                    `;
+
+                } catch (error) {
+                    console.error("エラー:", error);
+                    document.getElementById("weatherResult").innerHTML = `<p style="color: red;">⚠ ネットワークエラーが発生しました。</p>`;
+                }
+            }, (error) => {
+                alert("位置情報の取得に失敗しました: " + error.message);
+            });
+        }
+
+        // 入力した都市名で天気を取得する関数
+        async function fetchWeather() {
+            const city = document.getElementById("city").value.trim();
+            if (!city) return;
+            
+            saveHistory(city); // 履歴に保存
+
+            try {
+                const encodedCity = encodeURIComponent(city);
+                const response = await fetch(`http://127.0.0.1:5000/weather/${encodedCity}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    document.getElementById("weatherResult").innerHTML = `<p style="color: red;">⚠ ${data.error}</p>`;
+                    return;
+                }
+
+                document.getElementById("weatherResult").innerHTML = `
+                    <h3>${data["都市"]}</h3>
+                    <img src="${getWeatherIcon(data["天気"])}" alt="天気アイコン">
+                    <p><strong>天気:</strong> ${data["天気"]}</p>
+                    <p><strong>気温:</strong> ${data["気温 (°C)"]}°C</p>
+                    <p><strong>湿度:</strong> ${data["湿度 (%)"]}%</p>
+                    <p><strong>風速:</strong> ${data["風速 (m/s)"]}m/s</p>
+                `;
+
+            } catch (error) {
+                console.error("エラー:", error);
+                document.getElementById("weatherResult").innerHTML = `<p style="color: red;">⚠ ネットワークエラーが発生しました。</p>`;
+            }
+        }
+
+        // 天気の説明に応じたアイコンを取得する関数
+        function getWeatherIcon(description) {
+            const icons = {
+                "晴れ": "https://openweathermap.org/img/wn/01d.png",
+                "曇り": "https://openweathermap.org/img/wn/02d.png",
+                "雨": "https://openweathermap.org/img/wn/09d.png",
+                "雷雨": "https://openweathermap.org/img/wn/11d.png",
+                "雪": "https://openweathermap.org/img/wn/13d.png"
+            };
+            return icons[description] || "https://openweathermap.org/img/wn/50d.png";
+        }
+
+    function updateBackground(weather, hour) {
+      let bgImage = "";
+
+        if (hour >= 6 && hour < 10) {  // 朝
+            if (weather.includes("晴")) {
+            bgImage = "url('./images/morning-sky.jpg')";
+        } else if (weather.includes("曇")) {
+            bgImage = "url('./images/cloudy-morning.jpg')";
+        } else if (weather.includes("雨")) {
+            bgImage = "url('./images/rainy-morning.jpg')";
+        } else if (weather.includes("雪")) {
+            bgImage = "url('./images/snowy-morning.jpg')";
+        }
+    } else if (hour >= 10 && hour < 16) {  // 昼
+        if (weather.includes("晴")) {
+            bgImage = "url('./images/blue-sky.jpg')";
+        } else if (weather.includes("曇")) {
+            bgImage = "url('./images/cloudy.jpg')";
+        } else if (weather.includes("雨")) {
+            bgImage = "url('./images/rain.jpg')";
+        } else if (weather.includes("雪")) {
+            bgImage = "url('./images/snow.jpg')";
+        }
+    } else if (hour >= 16 && hour < 18) {  // 夕方
+        if (weather.includes("晴")) {
+            bgImage = "url('./images/sunset.jpg')";
+        } else if (weather.includes("曇")) {
+            bgImage = "url('./images/cloudy-sunset.jpg')";
+        } else if (weather.includes("雨")) {
+            bgImage = "url('./images/rainy-sunset.jpg')";
+        } else if (weather.includes("雪")) {
+            bgImage = "url('./images/snowy-sunset.jpg')";
+        }
+    } else if (hour >= 18 && hour < 22) {  // 夜
+        if (weather.includes("晴")) {
+            bgImage = "url('./images/night-sky.jpg')";
+        } else if (weather.includes("曇")) {
+            bgImage = "url('./images/cloudy-night.jpg')";
+        } else if (weather.includes("雨")) {
+            bgImage = "url('./images/rainy-night.jpg')";
+        } else if (weather.includes("雪")) {
+            bgImage = "url('./images/snowy-night.jpg')";
+        }
+    } else {  // 深夜
+        if (weather.includes("晴")) {
+            bgImage = "url('./images/stars.jpg')";
+        } else if (weather.includes("曇")) {
+            bgImage = "url('./images/cloudy-midnight.jpg')";
+        } else if (weather.includes("雨")) {
+            bgImage = "url('./images/rainy-midnight.jpg')";
+        } else if (weather.includes("雪")) {
+            bgImage = "url('./images/snowy-midnight.jpg')";
+        }
+    }
+
+    // 背景を適用
+    document.body.style.backgroundImage = bgImage;
+    document.body.style.backgroundSize = "cover";
+    document.body.style.backgroundPosition = "center";
+}
+
+        // ページ読み込み時に履歴を表示
+        window.onload = displayHistory;
+    
+    </script>
+
+</body>
+</html>
